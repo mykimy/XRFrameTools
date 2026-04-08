@@ -57,10 +57,6 @@ struct D3D11Frame {
     mGpuTimer.Start();
   }
 
-  void StopApp() {
-    mGpuTimer.StopApp();
-  }
-
   void StopRender(uint64_t displayTime) {
     mDisplayTime = displayTime;
 #ifndef NDEBUG
@@ -177,17 +173,6 @@ XrResult hooked_xrEndFrame(
   const XrFrameEndInfo* frameEndInfo) noexcept {
   if (!gIsEnabled) {
     return next_xrEndFrame(session, frameEndInfo);
-  }
-
-  // Record app-only GPU timestamp BEFORE the runtime/compositor processes
-  // the frame. This avoids measuring VSync wait on OpenComposite.
-  {
-    std::unique_lock lock(gFramesMutex);
-    auto it = std::ranges::find(
-      gFrames, frameEndInfo->displayTime, &D3D11Frame::GetPredictedDisplayTime);
-    if (it != gFrames.end()) {
-      it->StopApp();
-    }
   }
 
   // Call next layer first - only record GPU timestamps if xrEndFrame succeeds,

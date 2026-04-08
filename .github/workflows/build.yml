@@ -78,3 +78,4 @@ jobs:
         with:
           name: ${{inputs.output-prefix}}-debug-symbols
           path: build/out/${{matrix.build-type}}/pdb
+          if-no-files-found: ignore

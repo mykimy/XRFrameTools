@@ -17,8 +17,14 @@ jobs:
           Move-Item build32/lib/* bundle/INSTALL_ROOT/lib/
           mv installer-generator/* bundle/
           
-          Move-Item build64-debug-symbols debug-bundle
-          Move-Item build32-debug-symbols/* debug-bundle/
+          if (Test-Path build64-debug-symbols) {
+            Move-Item build64-debug-symbols debug-bundle
+            if (Test-Path build32-debug-symbols) {
+              Move-Item build32-debug-symbols/* debug-bundle/
+            }
+          } else {
+            mkdir debug-bundle
+          }
           
           Add-Content $env:GITHUB_OUTPUT "version=$(Get-Content bundle/INSTALL_ROOT/installer/version.txt)"
       - name: Upload bundle
