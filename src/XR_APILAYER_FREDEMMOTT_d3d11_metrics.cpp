@@ -53,7 +53,12 @@ struct D3D11Frame {
     mPredictedDisplayTime = predictedDisplayTime;
     mDisplayTime = {};
     mVideoMemoryInfo = {};
+    mPendingCount = 0;
     mGpuTimer.Start();
+  }
+
+  void StopApp() {
+    mGpuTimer.StopApp();
   }
 
   void StopRender(uint64_t displayTime) {
@@ -93,11 +98,20 @@ struct D3D11Frame {
     const auto ret = mGpuTimer.GetMicroseconds();
 
     if (ret == std::unexpected {GpuDataError::Pending}) {
+      mPendingCount++;
+      if (mPendingCount > 3) {
+        // Timer is stuck (e.g. session was recreated, GPU queries orphaned)
+        mPredictedDisplayTime = {};
+        mDisplayTime = {};
+        mPendingCount = 0;
+        return std::unexpected {GpuDataError::Unusable};
+      }
       return ret;
     }
 
     mPredictedDisplayTime = {};
     mDisplayTime = {};
+    mPendingCount = 0;
 
     return ret;
   }
@@ -109,6 +123,7 @@ struct D3D11Frame {
 
   DXGI_QUERY_VIDEO_MEMORY_INFO mVideoMemoryInfo {};
   D3D11GpuTimer mGpuTimer;
+  uint32_t mPendingCount {0};
 };
 
 ID3D11Device* gDevice {nullptr};
@@ -141,13 +156,14 @@ XrResult hooked_xrBeginFrame(
     auto it
       = std::ranges::find(gFrames, 0, &D3D11Frame::GetPredictedDisplayTime);
     if (it == gFrames.end()) {
-      if (gFrames.size() > 10) {
-        dprint("Runaway D3D11 frame timer pool size");
+      if (gFrames.size() < 16) {
+        gFrames.emplace_back(gDevice);
+        dprint("Increased D3D11 timer pool size to {}", gFrames.size());
+        it = gFrames.end() - 1;
+      } else {
+        // Pool at max capacity - skip this frame
         return ret;
       }
-      gFrames.emplace_back(gDevice);
-      dprint("Increased D3D11 timer pool size to {}", gFrames.size());
-      it = gFrames.end() - 1;
     }
     it->StartRender(time);
   }
@@ -163,12 +179,32 @@ XrResult hooked_xrEndFrame(
     return next_xrEndFrame(session, frameEndInfo);
   }
 
+  // Record app-only GPU timestamp BEFORE the runtime/compositor processes
+  // the frame. This avoids measuring VSync wait on OpenComposite.
   {
     std::unique_lock lock(gFramesMutex);
     auto it = std::ranges::find(
       gFrames, frameEndInfo->displayTime, &D3D11Frame::GetPredictedDisplayTime);
     if (it != gFrames.end()) {
-      it->StopRender(frameEndInfo->displayTime);
+      it->StopApp();
+    }
+  }
+
+  // Call next layer first - only record GPU timestamps if xrEndFrame succeeds,
+  // otherwise the GPU queries may never resolve and block the logging queue.
+  const auto ret = next_xrEndFrame(session, frameEndInfo);
+
+  {
+    std::unique_lock lock(gFramesMutex);
+    auto it = std::ranges::find(
+      gFrames, frameEndInfo->displayTime, &D3D11Frame::GetPredictedDisplayTime);
+    if (it != gFrames.end()) {
+      if (XR_SUCCEEDED(ret)) {
+        it->StopRender(frameEndInfo->displayTime);
+      } else {
+        // xrEndFrame failed - release the timer slot to avoid stuck Pending
+        it->StartRender(0);
+      }
     } else {
       TraceLoggingWrite(
         gTraceProvider,
@@ -176,7 +212,7 @@ XrResult hooked_xrEndFrame(
         TraceLoggingValue(frameEndInfo->displayTime, "DisplayTime"));
     }
   }
-  return next_xrEndFrame(session, frameEndInfo);
+  return ret;
 }
 
 static ApiLayerApi::LogFrameHookResult LoggingHook(Frame* frame) {
@@ -257,9 +293,8 @@ XrResult hooked_xrCreateSession(
         L"d3d11_metrics: detected adapter LUID {:#018x} - {}",
         std::bit_cast<uint64_t>(adapterDesc.AdapterLuid),
         adapterDesc.Description);
-      gIsEnabled = true;
     }
-
+    gIsEnabled = true;
     return ret;
   }
 

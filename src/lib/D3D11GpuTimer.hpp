@@ -18,6 +18,7 @@ class D3D11GpuTimer {
 
   D3D11GpuTimer(ID3D11Device* device);
   void Start();
+  void StopApp();
   void Stop();
   std::expected<uint64_t, GpuDataError> GetMicroseconds();
 
@@ -26,5 +27,6 @@ class D3D11GpuTimer {
 
   wil::com_ptr<ID3D11Query> mDisjointQuery;
   wil::com_ptr<ID3D11Query> mStartQuery;
+  wil::com_ptr<ID3D11Query> mAppStopQuery;
   wil::com_ptr<ID3D11Query> mStopQuery;
 };

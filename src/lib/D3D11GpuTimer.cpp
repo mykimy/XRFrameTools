@@ -19,6 +19,7 @@ D3D11GpuTimer::D3D11GpuTimer(ID3D11Device* device) {
   CheckHResult(device->CreateQuery(&desc, mDisjointQuery.put()));
   desc = {D3D11_QUERY_TIMESTAMP};
   CheckHResult(device->CreateQuery(&desc, mStartQuery.put()));
+  CheckHResult(device->CreateQuery(&desc, mAppStopQuery.put()));
   CheckHResult(device->CreateQuery(&desc, mStopQuery.put()));
 }
 
@@ -28,6 +29,11 @@ void D3D11GpuTimer::Start() {
   mContext->Begin(mDisjointQuery.get());
   mContext->End(mStartQuery.get());
 }
+
+void D3D11GpuTimer::StopApp() {
+  mContext->End(mAppStopQuery.get());
+}
+
 void D3D11GpuTimer::Stop() {
   mContext->End(mStopQuery.get());
   mContext->End(mDisjointQuery.get());
@@ -54,7 +60,7 @@ std::expected<uint64_t, GpuDataError> D3D11GpuTimer::GetMicroseconds() {
   const auto startHr
     = mContext->GetData(mStartQuery.get(), &start, sizeof(start), 0);
   const auto stopHr
-    = mContext->GetData(mStopQuery.get(), &stop, sizeof(stop), 0);
+    = mContext->GetData(mAppStopQuery.get(), &stop, sizeof(stop), 0);
   if (startHr != S_OK || stopHr != S_OK) {
     if (startHr == S_FALSE || stopHr == S_FALSE) {
       return std::unexpected {GpuDataError::Pending};
