@@ -21,7 +21,7 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        build-type: [ RelWithDebInfo, Debug ]
+        build-type: [ Release, Debug ]
     env:
       VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
     steps:
@@ -49,7 +49,7 @@ jobs:
 
           cmake .. `
             "-DCMAKE_BUILD_TYPE=${{matrix.build-type}}" `
-            -DVCPKG_TARGET_TRIPLET=${{inputs.vcpkg-architecture}}-windows${{matrix.build-type == 'RelWithDebInfo' && '-static' || ''}} `
+            -DVCPKG_TARGET_TRIPLET=${{inputs.vcpkg-architecture}}-windows${{matrix.build-type == 'Release' && '-static' || ''}} `
             -DVERSION_TWEAK=${{github.run_number}} `
             -DVERSION_TWEAK_LABEL=gha `
             @extraArgs
@@ -68,13 +68,13 @@ jobs:
           cmake --install . --config ${{matrix.build-type}} --prefix install-prefix
       - name: Upload binaries
         uses: actions/upload-artifact@v4
-        if: matrix.build-type != 'Debug'
+        if: matrix.build-type == 'Release'
         with:
           name: ${{inputs.output-prefix}}
           path: build/install-prefix
       - name: Upload debug symbols
         uses: actions/upload-artifact@v4
-        if: matrix.build-type != 'Debug'
+        if: matrix.build-type == 'Release'
         with:
           name: ${{inputs.output-prefix}}-debug-symbols
           path: build/out/${{matrix.build-type}}/pdb
